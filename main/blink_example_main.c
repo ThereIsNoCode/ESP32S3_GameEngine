@@ -1,0 +1,219 @@
+/* ILI9341 Display Driver for ESP32
+   Register-level SPI, no HAL/IDF drivers
+   Matches official Waveshare LCD_2IN4 driver behavior
+*/
+#include <stdio.h>
+#include "../tiles/tileset.h"
+#include "../drivers/ILI9341.h"
+#include "entities/player.h"
+#include "esp_timer.h"
+#include "../maps/level_manager.h"
+#include "entities/bomb.h"
+
+
+// ----------------------------------------------------------------
+// Entry point
+// ----------------------------------------------------------------
+// ADD this define — this is what sets MOSI bit length, not USER1
+
+#define pixelCount 76800
+#define tileRows 240/16
+#define tileColumn 320/16
+        
+
+
+uint32_t playerPosX;
+//Result of this functionis 2931us AVG
+void InsertTileToFrameBuffer(int tileX, int tileY) //Lets try writing multiple pixels while looping 8x8
+{
+    uint8_t tileId =
+        lvl_data[(tileY * lvl_width) + tileX];
+
+    uint8_t tileTexture[32];
+    memcpy(tileTexture, tileSet[tileId], sizeof(tileTexture));
+    
+    
+    for(int y = 0; y < 8; y++){
+        uint32_t row0 = ((tileY*16) + (y*2)) * 320;
+        uint32_t row1 = row0 + 320;
+
+        for(int x = 0; x < 4; x++){
+            uint8_t pixelByte = tileTexture[(y << 2) + x];
+            uint8_t shade1 = pixelByte >> 4;
+            uint8_t shade2 = pixelByte & 0x0F;
+
+            uint32_t dstX = (tileX<<4) + (x<<2);
+            framebuffer[dstX + 0 + row0] = shade1;
+            framebuffer[dstX + 1 + row0] = shade1;
+            framebuffer[dstX + 0 + row1] = shade1;
+            framebuffer[dstX + 1 + row1] = shade1;
+
+            framebuffer[dstX + 2 + row0] = shade2;
+            framebuffer[dstX + 3 + row0] = shade2;
+            framebuffer[dstX + 2 + row1] = shade2;
+            framebuffer[dstX + 3 + row1] = shade2;
+        }
+    }
+
+
+}
+
+void InsertTile_Fast(int worldTileX, int tileY, int screenX)
+{
+    uint8_t tileId = lvl_data[(tileY * lvl_width) + worldTileX];
+    const uint8_t *tex = tileSet[tileId];
+
+    int px = (player.position_x >> 2);   // player world pixel X (top-left)
+    int py = (player.position_y >> 2);   // player world pixel Y (top-left)
+
+    int playerCenteredPosX = (player.position_x >> 2)+8;  
+    int playerCenteredPosY = (player.position_y >> 2)+8;   
+    int playerCenterTileX = playerCenteredPosX >> 4;   // / 16
+    int playerCenterTileY = playerCenteredPosY >> 4;
+
+    int playerTileX = px >> 4;   // / 16
+    int playerTileY = py >> 4;
+    for(int y = 0; y < 8; y++){
+        uint32_t row0 = ((tileY*16) + (y*2)) * 320;
+        uint32_t row1 = row0 + 320;
+        for(int x = 0; x < 4; x++){
+            uint8_t pixelByte = tex[(y << 2) + x];
+            uint8_t shade1 = pixelByte >> 4;
+            uint8_t shade2 = pixelByte & 0x0F;
+
+            uint8_t pixel1 = shade1;
+            uint8_t pixel2 = shade2;
+            uint32_t dstX = screenX + (x<<2);      // screen-relative now
+
+            // if((playerCenterTileX-1 <= worldTileX && playerCenterTileX+1 >= worldTileX)  && 
+            //    (playerCenterTileY-1 <= tileY && playerCenterTileY+1 >= tileY)){
+            //     framebuffer[dstX + 0 + row0] = COLOR_RED;
+            //     framebuffer[dstX + 1 + row0] = COLOR_RED;
+            //     framebuffer[dstX + 0 + row1] = COLOR_RED;
+            //     framebuffer[dstX + 1 + row1] = COLOR_RED;
+            //     framebuffer[dstX + 2 + row0] = COLOR_RED;
+            //     framebuffer[dstX + 3 + row0] = COLOR_RED;
+            //     framebuffer[dstX + 2 + row1] = COLOR_RED;
+            //     framebuffer[dstX + 3 + row1] = COLOR_RED;
+            // }else{
+                framebuffer[dstX + 0 + row0] = pixel1;
+                framebuffer[dstX + 1 + row0] = pixel1;
+                framebuffer[dstX + 0 + row1] = pixel1;
+                framebuffer[dstX + 1 + row1] = pixel1;
+                framebuffer[dstX + 2 + row0] = pixel2;
+                framebuffer[dstX + 3 + row0] = pixel2;
+                framebuffer[dstX + 2 + row1] = pixel2;
+                framebuffer[dstX + 3 + row1] = pixel2;
+            //}
+
+
+    
+        }
+    }
+
+    
+}
+
+void InsertTile_Clipped(int worldTileX, int tileY, int screenX)
+{
+    uint8_t tileId = lvl_data[(tileY * lvl_width) + worldTileX];
+    const uint8_t *tex = tileSet[tileId];
+
+    for(int y = 0; y < 8; y++){
+        uint32_t row0 = ((tileY*16) + (y*2)) * 320;
+        uint32_t row1 = row0 + 320;
+        for(int x = 0; x < 4; x++){
+            uint8_t pixelByte = tex[(y << 2) + x];
+            uint8_t shade1 = pixelByte >> 4;
+            uint8_t shade2 = pixelByte & 0x0F;
+            int base = screenX + (x<<2);
+            for(int px = 0; px < 4; px++){
+                int col = base + px;
+                if ((unsigned)col >= 320u) continue;   // clips <0 and >=320
+                uint8_t shade = (px < 2) ? shade1 : shade2;
+                uint8_t pixel = shade;
+                framebuffer[col + row0] = pixel;
+                framebuffer[col + row1] = pixel;
+            }
+        }
+    }
+}
+
+void DMA_DrawMap(){
+    // camera left edge = player world X minus half screen (so player is centered)
+    int cameraX = (player.position_x >> 2) - 160;
+
+    int firstTileX  = cameraX >> 4;      // arithmetic shift; works for negative cameraX
+    int pixelOffset = cameraX & 15;
+
+    for(int y = 0; y < tileRows; y++){
+        for(int sx = 0; sx <= 20; sx++){
+            int worldTileX = firstTileX + sx;
+
+            worldTileX %= lvl_width;
+            if (worldTileX < 0) worldTileX += lvl_width;
+
+            int screenX = (sx << 4) - pixelOffset;
+
+            if (screenX >= 0 && screenX <= 320 - 16)
+                InsertTile_Fast(worldTileX, y, screenX);
+            else
+                InsertTile_Clipped(worldTileX, y, screenX);
+        }
+    }
+}
+
+
+void app_main(void)
+{
+    LoadLevel(LVL_ID_TESTLEVEL);
+    Bomb_Initialize();
+    
+    SPI_Init();
+    ili9341_init();
+    ili9341_fill_screen(0xF000);
+    
+    DMA_Init();
+    Button_Init();
+    
+    initialize_frameBuffer();
+
+    //Brown 0x4752
+    Player_SetPalette(0x4A00, 0xF00F);
+    
+    ESP_LOGI(DISPLAY_TAG, "COMPLETE INIT");
+    ADC_Init();
+
+    while (1)
+    {
+        int64_t t0 = esp_timer_get_time();
+        
+
+        //ESP_LOGI(DISPLAY_TAG, "X (GPIO6) = %4d   Y (GPIO7) = %4d", x, y);
+        Player_Move();
+
+    
+        
+        Bomb_Move();
+        
+        DMA_DrawMap();
+
+        
+        Bomb_Render();
+        RenderPlayer();
+        
+        
+        DMA_BlastBuffer();
+
+ 
+       
+
+        int64_t t1 = esp_timer_get_time();
+
+        int64_t diff_us = t1 - t0;
+        float fps = 1000000.0f / diff_us;
+
+        ESP_LOGI(DISPLAY_TAG, "DMA blast: %lld us | FPS: %.1f", diff_us, fps);
+        
+    }
+}
