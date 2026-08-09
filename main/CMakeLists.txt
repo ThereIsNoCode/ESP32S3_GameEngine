@@ -9,6 +9,7 @@ idf_component_register(SRCS "blink_example_main.c"
                             "entities/entity.c"
                             "entities/bomb.c"
                             "../maps/level_manager.c"
+                            "networking/network.c"
                        INCLUDE_DIRS "."
                                     "../drivers"
-                       REQUIRES esp_adc esp_timer)
+                       REQUIRES esp_adc esp_timer esp_wifi nvs_flash esp_netif lwip esp_event)

@@ -38,8 +38,9 @@ void Bomb_Initialize(){
 
 
 void Bomb_Move(){
-    int32_t player_position_x = player.position_x;
-    int32_t player_position_y = player.position_y;
+    Entity player = *player_Current;
+    int32_t player_position_x = player_Current->position_x;
+    int32_t player_position_y = player_Current->position_y;
     for(int i = 0; i < BOMB_POOL_SIZE; i++){
         uint8_t currentCollisionInfo = bombArr[i].collisionSide;
         bombArr[i].collisionSide = 0;
@@ -47,9 +48,9 @@ void Bomb_Move(){
         bombArr[i].force_x = 0;
         bombArr[i].force_y = 0;
 
-        uint8_t collisionPlayerInfo = Entity_Collide_Entity(&bombArr[i], &player);
+        uint8_t collisionPlayerInfo = Entity_Collide_Entity(&bombArr[i], player_Current);
 
-        int offset = (player.state&FACE_LEFT)*32;
+        int offset = (player_Current->state&FACE_LEFT)*32;
 
         if(bombDataArr[i].isGrabbed && INPUT_RUN){
             bombArr[i].position_x = player_position_x+(32)-offset;
@@ -98,7 +99,7 @@ void Bomb_Move(){
             
         }
         if(bombDataArr[i].ignoreEntityId == 1){
-            if(!Entity_Collide_Entity(&bombArr[i], &player)){
+            if(!Entity_Collide_Entity(&bombArr[i], player_Current)){
                 bombDataArr[i].ignoreEntityId = 0;
             }
 
@@ -169,10 +170,9 @@ void Bomb_Move(){
 
 void Bomb_Render()
 {
-
     int MAP_PIXEL_WIDTH = lvl_width * TILE_SIZE;   // full map width in RENDER-space pixels
     int MAP_PIXEL_WIDTH_HALF = MAP_PIXEL_WIDTH/2;   // full map width in RENDER-space pixels
-    int32_t playerX = player.position_x >> 2;
+    int32_t playerX = player_Current->position_x >> 2;
     for(int i = 0; i < BOMB_POOL_SIZE; i++){
         // Same camera calculation as DMA_DrawMap, so bomb draws in the correct
         // screen position relative to the scrolling world (not just a fixed X)

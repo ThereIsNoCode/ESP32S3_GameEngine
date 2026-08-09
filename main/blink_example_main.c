@@ -9,7 +9,7 @@
 #include "esp_timer.h"
 #include "../maps/level_manager.h"
 #include "entities/bomb.h"
-
+#include "networking/network.h"
 
 // ----------------------------------------------------------------
 // Entry point
@@ -62,7 +62,7 @@ void InsertTile_Fast(int worldTileX, int tileY, int screenX)
 {
     uint8_t tileId = lvl_data[(tileY * lvl_width) + worldTileX];
     const uint8_t *tex = tileSet[tileId];
-
+    Entity player = *player_Current;
     int px = (player.position_x >> 2);   // player world pixel X (top-left)
     int py = (player.position_y >> 2);   // player world pixel Y (top-left)
 
@@ -140,6 +140,7 @@ void InsertTile_Clipped(int worldTileX, int tileY, int screenX)
 }
 
 void DMA_DrawMap(){
+    Entity player = *player_Current;
     // camera left edge = player world X minus half screen (so player is centered)
     int cameraX = (player.position_x >> 2) - 160;
 
@@ -164,8 +165,68 @@ void DMA_DrawMap(){
 }
 
 
+
+const uint8_t isHost = 1;
+
+packet_clientInput_t inputPacketLocal;
+static void gameLoop_task(void *pvParameters){
+    while (1)
+    {
+        int64_t t0 = esp_timer_get_time();
+        
+        inputPacketLocal.axis_X = Read_Joystick_X();
+        inputPacketLocal.axis_Y = Read_Joystick_Y();
+        //ESP_LOGI(DISPLAY_TAG, "X (GPIO6) = %4d   Y (GPIO7) = %4d", x, y);
+        
+        Player_Apply_Movement(&inputPacketLocal);
+        //Player_Move();
+
+    
+        
+        Bomb_Move();
+        
+        DMA_DrawMap();
+
+        
+        Bomb_Render();
+        RenderPlayer();
+        RenderOtherPlayer();
+        
+        DMA_BlastBuffer();
+
+ 
+       
+
+        int64_t t1 = esp_timer_get_time();
+
+        int64_t diff_us = t1 - t0;
+        float fps = 1000000.0f / diff_us;
+        vTaskDelay(pdMS_TO_TICKS(1));
+        //ESP_LOGI(DISPLAY_TAG, "DMA blast: %lld us | FPS: %.1f", diff_us, fps);
+        
+    }
+}
+
+
 void app_main(void)
 {
+    init_nvs();
+    assign_player(0); //as default
+    if(isHost){
+        init_host();  
+        inputPacketLocal =  (struct packet_clientInput_t){
+            .playerId = 0,
+            
+        };
+    }
+    else{
+        init_client();
+        inputPacketLocal =  (struct packet_clientInput_t){
+            .playerId = 1,
+            
+        };
+    }
+
     LoadLevel(LVL_ID_TESTLEVEL);
     Bomb_Initialize();
     
@@ -179,41 +240,11 @@ void app_main(void)
     initialize_frameBuffer();
 
     //Brown 0x4752
-    Player_SetPalette(0x4A00, 0xF00F);
+    Player_SetPalette(0x4A00, 0x4752);
     
     ESP_LOGI(DISPLAY_TAG, "COMPLETE INIT");
     ADC_Init();
 
-    while (1)
-    {
-        int64_t t0 = esp_timer_get_time();
-        
-
-        //ESP_LOGI(DISPLAY_TAG, "X (GPIO6) = %4d   Y (GPIO7) = %4d", x, y);
-        Player_Move();
-
+    xTaskCreate(gameLoop_task, "game_loop", 4096, NULL, 5, NULL);
     
-        
-        Bomb_Move();
-        
-        DMA_DrawMap();
-
-        
-        Bomb_Render();
-        RenderPlayer();
-        
-        
-        DMA_BlastBuffer();
-
- 
-       
-
-        int64_t t1 = esp_timer_get_time();
-
-        int64_t diff_us = t1 - t0;
-        float fps = 1000000.0f / diff_us;
-
-        ESP_LOGI(DISPLAY_TAG, "DMA blast: %lld us | FPS: %.1f", diff_us, fps);
-        
-    }
 }
