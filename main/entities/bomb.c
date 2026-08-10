@@ -93,8 +93,8 @@ void Bomb_Move(){
         if(bombDataArr[i].isGrabbed == true){
             bombArr[i].velocity_x = 0;
             bombArr[i].velocity_y = 0;
-            bombArr[i].force_x += (joyStick_X/24);
-            bombArr[i].force_y += (joyStick_Y/24);
+            bombArr[i].force_x += (joystick_X/24);
+            bombArr[i].force_y += (joystick_Y/24);
             bombDataArr[i].isGrabbed = false;
             
         }

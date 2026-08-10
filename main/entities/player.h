@@ -15,8 +15,7 @@ typedef struct Player{
 static uint16_t cam_offset = 0;
 extern Entity *player_Current;
 
-extern int joyStick_X;
-extern int joyStick_Y;
+
 extern Entity playerArr[];
 extern Player playerDataArr[];
 #define INPUT_RIGHT  (joyStick_X>0)

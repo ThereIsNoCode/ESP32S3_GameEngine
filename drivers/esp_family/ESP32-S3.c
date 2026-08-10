@@ -26,7 +26,9 @@ void ADC_Init()
 
 #define JOYSTICK_DEADZONE 80
 
-int Read_Joystick_X(){
+int joystick_X = 0;
+int joystick_Y = 0;
+void Sample_Joystick(){
     int x = 0;
     adc_oneshot_read(adc1, ADC_CHANNEL_5, &x);   // GPIO6
     x -= 1960;
@@ -39,10 +41,7 @@ int Read_Joystick_X(){
     else if(x > 1024){
         x = 1024;
     }
-    return x;
-}
 
-int Read_Joystick_Y(){
     int y = 0;
     adc_oneshot_read(adc1, ADC_CHANNEL_6, &y);   // GPIO6
     y -= 1960;
@@ -55,8 +54,11 @@ int Read_Joystick_Y(){
     else if(y > 1024){
         y = 1024;
     }
-    return y;
+
+    joystick_X = x;
+    joystick_Y = y;
 }
+
 
 //Initialize the four buttons 
 void Button_Init(){

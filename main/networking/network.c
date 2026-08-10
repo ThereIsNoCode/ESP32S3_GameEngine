@@ -91,8 +91,8 @@ packet_clientPosition_t cachedPositionPacket;
 void Network_Apply_Movement(){
 
     localInputPacket.playerId = player_Current->id;
-    localInputPacket.axis_X = Read_Joystick_X();
-    localInputPacket.axis_Y = Read_Joystick_Y();
+    localInputPacket.axis_X = joystick_X;
+    localInputPacket.axis_Y = joystick_Y;
     uint8_t buttons =
         ((INPUT_JUMP     ? 1 : 0) << 0) |
         ((INPUT_INTERACT ? 1 : 0) << 1);   // add more bits as needed
@@ -301,8 +301,8 @@ static void udp_client_task(void *pvParameters)
                 packet_clientInput_t inputPacket = {
                     .requestType = MSG_SERVER_INPUT,
                     .playerId    = my_player_id,
-                    .axis_X      = 0,//Read_Joystick_X(), ///////////////////////////////////////////////////
-                    .axis_Y      = 0,//Read_Joystick_Y(),
+                    .axis_X      = joystick_X,//Read_Joystick_X(), ///////////////////////////////////////////////////
+                    .axis_Y      = joystick_Y,//Read_Joystick_Y(),
                     .buttons     = buttons,
                 };
 

@@ -172,7 +172,7 @@ static void gameLoop_task(void *pvParameters){
     while (1)
     {
         int64_t t0 = esp_timer_get_time();
-        
+        Sample_Joystick();
 
         //ESP_LOGI(DISPLAY_TAG, "X (GPIO6) = %4d   Y (GPIO7) = %4d", x, y);
         

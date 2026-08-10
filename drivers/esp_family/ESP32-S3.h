@@ -124,9 +124,11 @@ static const char *DISPLAY_TAG = "DISPLAY";
 #define DMA_DW0 (DMA_DW0_OWNER_FLAG  | DMA_DW0_LENGTH_FLAG | DMA_DW0_SIZE_FLAG)
 #define DMA_DW0_TAIL (DMA_DW0_OWNER_FLAG | DMA_DW0_EOF_FLAG | DMA_DW0_LENGTH_FLAG | DMA_DW0_SIZE_FLAG)
 
+
+extern int joystick_X;
+extern int joystick_Y;
 void ADC_Init();
-int Read_Joystick_X();
-int Read_Joystick_Y();
+void Sample_Joystick();
 void SPI_Init();
 void DMA_Init();
 void Button_Init();
