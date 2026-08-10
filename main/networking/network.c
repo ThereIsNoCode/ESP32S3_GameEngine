@@ -1,6 +1,7 @@
 #include "network.h"
 #include "packets.h"
 #include "../entities/player.h"
+#include "../entities/bomb.h"
 #include "../drivers/esp_family/ESP32-S3.h"
 #include <fcntl.h>   // for fcntl / O_NONBLOCK — add to your inclu
 #define WIFI_SSID  "AOWKESP"
@@ -80,18 +81,62 @@ typedef struct input_packet_t {
 
 
 #define NETWORK_UDP_PORT 3333
+
+
+packet_clientInput_t localInputPacket;
+//you can make this into an array of # of players, where index = player ID and value is packet for input
+packet_clientInput_t cachedInputPacket;
+packet_clientPosition_t cachedPositionPacket;
+//Once we want more players, loop through all cached packets and compute them
+void Network_Apply_Movement(){
+
+    localInputPacket.playerId = player_Current->id;
+    localInputPacket.axis_X = Read_Joystick_X();
+    localInputPacket.axis_Y = Read_Joystick_Y();
+    uint8_t buttons =
+        ((INPUT_JUMP     ? 1 : 0) << 0) |
+        ((INPUT_INTERACT ? 1 : 0) << 1);   // add more bits as needed
+    localInputPacket.buttons = buttons;
+
+
+    Player_Apply_Movement(&localInputPacket);
+
+    Player_Apply_Movement(&cachedInputPacket);
+    //Player_InterpolateRemote(&cachedPositionPacket);
+}
+
+//Occurs only in client
+void apply_snapshot(packet_serverSnapshot_t *snap){
+    
+    for(int i = 0; i < 2; i++){
+        playerArr[i].position_x = snap->players[i].position_x;
+        playerArr[i].position_y = snap->players[i].position_y;
+    }
+    for(int i = 0; i < 5; i++){
+        bombArr[i].position_x = snap->bombs[i].position_x;
+        bombArr[i].position_y = snap->bombs[i].position_y;
+    }
+}
+#define tick_speed 33 //originally 33
+// ---------------------------------------------------------------------------
+// SERVER
+// ---------------------------------------------------------------------------
 static void udp_server_task(void *pvParameters)
 {
-    uint8_t rx_buffer[128];                 // raw bytes now, not a string
-    struct sockaddr_in6 dest_addr;          // oversized so it fits IPv4 or IPv6
+    uint8_t rx_buffer[128];
+    struct sockaddr_in6 dest_addr;
 
-    uint32_t last_seq_from_client = 0;      // task scope: persists across rebuilds
+    // Per-client tracking (single client for now; index by player later)
+    struct sockaddr_storage client_addr;
+    socklen_t              client_addr_len = 0;
+    bool                   have_client = false;
+    uint32_t               last_seq_from_client = 0;
 
     while (1) {   // OUTER: own the socket's lifecycle
         struct sockaddr_in *dest_addr_ip4 = (struct sockaddr_in *)&dest_addr;
         dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
-        dest_addr_ip4->sin_family = AF_INET;
-        dest_addr_ip4->sin_port = htons(NETWORK_UDP_PORT);
+        dest_addr_ip4->sin_family      = AF_INET;
+        dest_addr_ip4->sin_port        = htons(NETWORK_UDP_PORT);
 
         int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
         if (sock < 0) {
@@ -99,76 +144,124 @@ static void udp_server_task(void *pvParameters)
             break;
         }
 
-        struct timeval timeout = { .tv_sec = 0, .tv_usec = 500000 };
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
-
         if (bind(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) < 0) {
             ESP_LOGE(DISPLAY_TAG, "Socket unable to bind: errno %d", errno);
             close(sock);
-            continue;                       // rebuild from the top of OUTER
-
+            continue;
         }
         ESP_LOGI(DISPLAY_TAG, "Socket bound, port %d", NETWORK_UDP_PORT);
 
-        struct sockaddr_storage source_addr;
-        socklen_t socklen = sizeof(source_addr);
+        // Non-blocking: recvfrom returns immediately (EAGAIN) when nothing waiting
+        int flags = fcntl(sock, F_GETFL, 0);
+        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
 
-        while (1) {   // INNER: input in -> snapshot out, forever
-            int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer), 0,
-                               (struct sockaddr *)&source_addr, &socklen);
+        TickType_t last_wake = xTaskGetTickCount();
+        const TickType_t tick = pdMS_TO_TICKS(tick_speed);   // 30 Hz server tick
 
-            if (len < 0) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    continue;               // timeout: no packet. Periodic work goes here.
+        while (1) {   // INNER: drain inputs, simulate is elsewhere, send snapshots
+
+
+            // 1. DRAIN all pending packets this tick (never blocks)
+            for (;;) {
+                struct sockaddr_storage source_addr;
+                socklen_t socklen = sizeof(source_addr);
+
+                int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer), 0,
+                                   (struct sockaddr *)&source_addr, &socklen);
+                if (len < 0) {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) break;  // nothing left
+                    ESP_LOGE(DISPLAY_TAG, "recvfrom failed: errno %d", errno);
+                    goto rebuild;   // real error -> rebuild socket
                 }
-                ESP_LOGE(DISPLAY_TAG, "recvfrom failed: errno %d", errno);
-                break;                      // real error -> drop to OUTER, rebuild socket
-            }
+                if (len < 1) continue;
 
-            if(len < 1){ continue;} //min 1 byte needed to determine type
-            uint8_t requestType = rx_buffer[0];
-            switch(requestType){
-                case MSG_SERVER_JOIN:
-                    packet_assignRequest_t assign = {
-                        .requestType = MSG_CLIENT_ASSIGN,
-                        .player_id = 1,
-                    };
-                    sendto(sock, &assign, sizeof(assign), 0,
-                        (struct sockaddr *)&source_addr, socklen);
-                    break;
-                case MSG_SERVER_INPUT:
-                    if (len != sizeof(packet_clientInput_t)) {
-                        break;   // wrong size — not a valid input packet, ignore
+                uint8_t requestType = rx_buffer[0];
+                switch (requestType) {
+                    case MSG_SERVER_JOIN: {
+                        // Remember who this client is so we can push snapshots to them
+                        memcpy(&client_addr, &source_addr, socklen);
+                        client_addr_len = socklen;
+                        have_client = true;
+
+                        packet_assignRequest_t assign = {
+                            .requestType = MSG_CLIENT_ASSIGN,
+                            .player_id   = 1,       // TODO: real slot assignment
+                        };
+                        sendto(sock, &assign, sizeof(assign), 0,
+                               (struct sockaddr *)&source_addr, socklen);
+                        break;
                     }
+                    case MSG_SERVER_INPUT: {
+                        //if (len != sizeof(packet_clientInput_t)) break;
+                        if (len != sizeof(packet_clientInput_t)) break;
 
-                    packet_clientInput_t inputPacketReceived;
-                    memcpy(&inputPacketReceived, rx_buffer, sizeof(inputPacketReceived));
+                        //If I want to continue server authorative, uncomment below memcpy
+                        //memcpy(&cachedInputPacket, rx_buffer, sizeof(cachedInputPacket));
+            
+                        memcpy(&cachedInputPacket, rx_buffer, sizeof(cachedInputPacket));
 
-                    // Now the fields are available:
-                    //   input.playerId   -> which player this input is for
-                    //   input.axis_X     -> joystick X (int16_t, signed)
-                    //   input.axis_Y     -> joystick Y
-                    //   input.buttons    -> button bitmask
+                        //cachedPositionPacket
+                        //Player_DirectSetPosition(&inputPacket);
 
-                    // Apply it to that player's authoritative state:
-                    Player_Apply_Movement(&inputPacketReceived);
-
-                    
-                    break;
+                        // (optional) remember client for snapshots if not via join
+                        memcpy(&client_addr, &source_addr, socklen);
+                        client_addr_len = socklen;
+                        have_client = true;
+            
+                        break;
+                    }
+                }
             }
 
-            input_packet_t in;
-            memcpy(&in, rx_buffer, sizeof(in));
+            // 2. SEND a snapshot to the known client, once per tick
+            if (have_client) {
+                
+                // Build your snapshot from current authoritative game state.
+                // Placeholder shape — replace with your real snapshot_packet_t:
+                //
+                // snapshot_packet_t snap = { .requestType = MSG_CLIENT_SNAPSHOT, ... };
+                // fill_snapshot(&snap);
+                // sendto(sock, &snap, sizeof(snap), 0,
+                //        (struct sockaddr *)&client_addr, client_addr_len);
 
+                packet_serverSnapshot_t snapshotPacket = {
+                    .requestType = MSG_CLIENT_SNAPSHOT,
+                };
+
+                for(int i = 0; i < 2; i++){
+                    snapshotPacket.players[i].position_x = playerArr[i].position_x;
+                    snapshotPacket.players[i].position_y = playerArr[i].position_y;
+                }
+                for(int i = 0; i < 5; i++){
+                    snapshotPacket.bombs[i].position_x = bombArr[i].position_x;
+                    snapshotPacket.bombs[i].position_y = bombArr[i].position_y;
+                }
+                sendto(sock, &snapshotPacket, sizeof(snapshotPacket), 0,
+                    (struct sockaddr *)&client_addr, client_addr_len);   // A;waus remember fromt host to client, use client_addr
+
+
+                localInputPacket.requestType = MSG_CLIENT_INPUT;
+                sendto(sock, &localInputPacket, sizeof(localInputPacket), 0,
+                    (struct sockaddr *)&client_addr, client_addr_len);   // <-- the real client
+
+            }
+
+            // 3. Steady tick, independent of network timing
+            xTaskDelayUntil(&last_wake, tick);
         }
 
-        // Reached only when INNER breaks on a real error:
+    rebuild:
         shutdown(sock, 0);
         close(sock);
     }
 
     vTaskDelete(NULL);
 }
+
+// ---------------------------------------------------------------------------
+// CLIENT
+// ---------------------------------------------------------------------------
+
 
 static void udp_client_task(void *pvParameters)
 {
@@ -177,73 +270,113 @@ static void udp_client_task(void *pvParameters)
     while (1) {   // OUTER: build socket, rebuild if it breaks
         struct sockaddr_in dest_addr;
         dest_addr.sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
-        dest_addr.sin_family = AF_INET;
-        dest_addr.sin_port = htons(NETWORK_UDP_PORT);
+        dest_addr.sin_family      = AF_INET;
+        dest_addr.sin_port        = htons(NETWORK_UDP_PORT);
 
         int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
         if (sock < 0) { ESP_LOGE(DISPLAY_TAG, "socket: errno %d", errno); break; }
 
-        struct timeval timeout = { .tv_sec = 0, .tv_usec = 500000 };  // 500ms
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
+        // Non-blocking so the receive never gates the send rate
+        int flags = fcntl(sock, F_GETFL, 0);
+        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
 
-        bool joined = false;          // <-- the phase flag
-        uint8_t my_player_id = 0;
+        bool     joined       = false;
+        uint8_t  my_player_id = 0;
+
+        TickType_t last_wake = xTaskGetTickCount();
+        const TickType_t tick = pdMS_TO_TICKS(tick_speed);   // 30 Hz send rate
 
         while (1) {   // INNER
+            // 1. SEND every tick
             if (!joined) {
-                // PHASE 1: keep sending join until assigned
                 packet_joinRequest_t join = { .requestType = MSG_SERVER_JOIN };
                 sendto(sock, &join, sizeof(join), 0,
                        (struct sockaddr *)&dest_addr, sizeof(dest_addr));
             } else {
-                // PHASE 2: joined — send inputs instead (per tick)
-                // input_packet_t in = { ... };
-                // sendto(sock, &in, sizeof(in), 0, ...);
+                
+                uint8_t buttons =
+                    ((INPUT_JUMP     ? 1 : 0) << 0) |
+                    ((INPUT_INTERACT ? 1 : 0) << 1);   // add more bits as needed
+
                 packet_clientInput_t inputPacket = {
                     .requestType = MSG_SERVER_INPUT,
-                    .playerId = my_player_id,
-                    .axis_X = Read_Joystick_X(),
-                    .axis_Y = Read_Joystick_Y(),
-                    .buttons = (INPUT_JUMP<<0)|(INPUT_INTERACT<<1) //add more when needed
+                    .playerId    = my_player_id,
+                    .axis_X      = 0,//Read_Joystick_X(), ///////////////////////////////////////////////////
+                    .axis_Y      = 0,//Read_Joystick_Y(),
+                    .buttons     = buttons,
                 };
+
+                // packet_clientPosition_t inputPacket = {
+                //     .requestType = MSG_SERVER_INPUT,
+                //     .playerId    = my_player_id,
+                //     .position_X      = player_Current->position_x,
+                //     .position_Y      = player_Current->position_y,
+                // };
+                //ESP_LOGI(DISPLAY_TAG, "SENDING POSITION");
                 sendto(sock, &inputPacket, sizeof(inputPacket), 0,
                        (struct sockaddr *)&dest_addr, sizeof(dest_addr));
             }
+            
+            // 2. DRAIN all pending replies without blocking
+            for (;;) {
+                
+                struct sockaddr_storage source_addr;
+                socklen_t socklen = sizeof(source_addr);
 
-            struct sockaddr_storage source_addr;
-            socklen_t socklen = sizeof(source_addr);
-            int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer), 0,
-                               (struct sockaddr *)&source_addr, &socklen);
+                int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer), 0,
+                                   (struct sockaddr *)&source_addr, &socklen);
 
-            if (len < 0) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) continue;  // no reply, loop
-                ESP_LOGE(DISPLAY_TAG, "recvfrom: errno %d", errno);
-                break;
-            }
-            if (len < 1) continue;
-
-            uint8_t type = rx_buffer[0];
-            switch (type) {
-                case MSG_CLIENT_ASSIGN: {
-                    if (len == sizeof(packet_assignRequest_t)) {
-                        packet_assignRequest_t a;
-                        memcpy(&a, rx_buffer, sizeof(a));
-                        my_player_id = a.player_id;
-                        assign_player(1);
-                        joined = true;     // <-- STOP joining, enter phase 2
-                        ESP_LOGI(DISPLAY_TAG, "assigned player %d", my_player_id);
-                    }
-                    break;
+                
+                if (len < 0) {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+                    ESP_LOGE(DISPLAY_TAG, "recvfrom: errno %d", errno);
+                    goto rebuild;
                 }
-                case MSG_CLIENT_SNAPSHOT:
-                    // apply snapshot to world state
-                    break;
+                
+                if (len < 1) continue;
+                //ESP_LOGI(DISPLAY_TAG, "client rx: type=%d", rx_buffer[0]);
+                uint8_t type = rx_buffer[0];
+                switch (type) {
+                    case MSG_CLIENT_ASSIGN: {
+                        if (len == sizeof(packet_assignRequest_t)) {
+                            packet_assignRequest_t a;
+                            memcpy(&a, rx_buffer, sizeof(a));
+                            my_player_id = a.player_id;
+                            assign_player(my_player_id);   // use the real id, not 1
+                            joined = true;
+                            ESP_LOGI(DISPLAY_TAG, "assigned player %d", my_player_id);
+                        }
+                        break;
+                    }
+                    case MSG_CLIENT_SNAPSHOT: {
+                        
+                        if (len == sizeof(packet_serverSnapshot_t)) {
+                           
+                            packet_serverSnapshot_t snap;
+                            memcpy(&snap, rx_buffer, sizeof(snap));
+                            apply_snapshot(&snap);
+                        }
+                        break;
+                    }
+                    case MSG_CLIENT_INPUT:{
+
+                        if (len == sizeof(packet_clientInput_t)) {
+                            memcpy(&cachedInputPacket, rx_buffer, sizeof(cachedInputPacket));
+                        }  
+                        break; 
+                    }
+                }
             }
+
+            // 3. Steady tick — send rate no longer depends on replies
+            xTaskDelayUntil(&last_wake, tick);
         }
 
+    rebuild:
         shutdown(sock, 0);
         close(sock);
     }
+
     vTaskDelete(NULL);
 }
 

@@ -24,7 +24,7 @@ void ADC_Init()
     adc_oneshot_config_channel(adc1, ADC_CHANNEL_6, &chan_cfg); // GPIO7
 }
 
-#define JOYSTICK_DEADZONE 50
+#define JOYSTICK_DEADZONE 80
 
 int Read_Joystick_X(){
     int x = 0;

@@ -168,17 +168,16 @@ void DMA_DrawMap(){
 
 const uint8_t isHost = 1;
 
-packet_clientInput_t inputPacketLocal;
 static void gameLoop_task(void *pvParameters){
     while (1)
     {
         int64_t t0 = esp_timer_get_time();
         
-        inputPacketLocal.axis_X = Read_Joystick_X();
-        inputPacketLocal.axis_Y = Read_Joystick_Y();
+
         //ESP_LOGI(DISPLAY_TAG, "X (GPIO6) = %4d   Y (GPIO7) = %4d", x, y);
         
-        Player_Apply_Movement(&inputPacketLocal);
+        //Player_Apply_Movement(&inputPacketLocal);
+        Network_Apply_Movement();
         //Player_Move();
 
     
@@ -202,7 +201,7 @@ static void gameLoop_task(void *pvParameters){
         int64_t diff_us = t1 - t0;
         float fps = 1000000.0f / diff_us;
         vTaskDelay(pdMS_TO_TICKS(1));
-        //ESP_LOGI(DISPLAY_TAG, "DMA blast: %lld us | FPS: %.1f", diff_us, fps);
+        ESP_LOGI(DISPLAY_TAG, "Total FrameTime blast: %lld us | FPS: %.1f", diff_us, fps);
         
     }
 }
@@ -212,20 +211,6 @@ void app_main(void)
 {
     init_nvs();
     assign_player(0); //as default
-    if(isHost){
-        init_host();  
-        inputPacketLocal =  (struct packet_clientInput_t){
-            .playerId = 0,
-            
-        };
-    }
-    else{
-        init_client();
-        inputPacketLocal =  (struct packet_clientInput_t){
-            .playerId = 1,
-            
-        };
-    }
 
     LoadLevel(LVL_ID_TESTLEVEL);
     Bomb_Initialize();
@@ -244,6 +229,14 @@ void app_main(void)
     
     ESP_LOGI(DISPLAY_TAG, "COMPLETE INIT");
     ADC_Init();
+
+        if(isHost){
+        init_host();  
+    }
+    else{
+        init_client();
+
+    }
 
     xTaskCreate(gameLoop_task, "game_loop", 4096, NULL, 5, NULL);
     

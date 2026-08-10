@@ -20,6 +20,14 @@ typedef struct Entity{
     uint8_t id;
 } Entity;
 
+typedef struct EntityPacket{
+    
+    int32_t position_x;
+    int32_t position_y;
+    uint8_t state;
+    uint8_t id;
+} EntityPacket;
+
 #define ON_GROUND   (1u << 0)
 #define FACE_LEFT   (1u << 1)
 #define IS_MOVING   (1u << 2)

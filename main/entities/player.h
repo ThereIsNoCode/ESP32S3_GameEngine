@@ -7,11 +7,18 @@
 #include "../networking/packets.h"
 #include "../maps/level_manager.h"
 
+typedef struct Player{
+    uint8_t startJump;
+    uint8_t jumpTime;
+} Player;
+
 static uint16_t cam_offset = 0;
 extern Entity *player_Current;
+
 extern int joyStick_X;
 extern int joyStick_Y;
-
+extern Entity playerArr[];
+extern Player playerDataArr[];
 #define INPUT_RIGHT  (joyStick_X>0)
 #define INPUT_LEFT (joyStick_X<0)
 
@@ -25,7 +32,8 @@ void Player_Move();
 
 
 void Player_Apply_Movement(packet_clientInput_t *input);
-
+void Player_DirectSetPosition(packet_clientPosition_t *input);
+void Player_InterpolateRemote(packet_clientPosition_t *input);
 // void Player_CollideX();
 // void Player_CollideY();
 void RenderPlayer();

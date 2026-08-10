@@ -34,12 +34,21 @@ Entity playerArr[] = {
 
 }; 
 
+Player playerDataArr[] = {
+    {
+        0,
+        0,
+    },
+    {
+        0,
+        0,
+    }
 
+}; 
 
 Entity *player_Current; 
-uint8_t startJump = 0;
-uint8_t jumpTIme = 0;
-
+int joyStick_X;
+int joyStick_Y;
 
 #define PLAYER_MAX_SPEED (4 << 2)
 
@@ -52,7 +61,8 @@ uint16_t palette_player2[16];
 
 void assign_player(uint8_t id){
      ESP_LOGI(DISPLAY_TAG, "SETTING PLAYER TO CORRECT ID: %u" , id);
-    playerArr[id].id = id;
+    playerArr[0].id = 0;
+     playerArr[1].id = 1;
     player_Current = &playerArr[id];
 }
 
@@ -64,8 +74,7 @@ void  Player_SetPalette(uint16_t player1_tint, uint16_t player2_tint){
     }
 }
 
-int joyStick_X = 0;
-int joyStick_Y = 0;
+
 
 //Fixed-Point Units for everything in player.
 // void Player_Move(){
@@ -174,9 +183,25 @@ int joyStick_Y = 0;
 //     }
 // }
 
+void Player_DirectSetPosition(packet_clientPosition_t *input){
+    //ESP_LOGI(DISPLAY_TAG, "CURRENT NEW POS: %s", input->position_X);
+    playerArr[input->playerId].position_x = input->position_X;
+    playerArr[input->playerId].position_y = input->position_Y;
+}
+void Player_InterpolateRemote(packet_clientPosition_t *input){
+    for (int i = 0; i < 2; i++) {
+        if (i == player_Current->id) continue;   // don't interpolate my own player, I control it directly
+
+        Entity *e = &playerArr[i];
+        // Move 1/4 of the remaining distance each frame
+        e->position_x += (input->position_X - e->position_x) / 2;
+        e->position_y += (input->position_Y - e->position_y) / 2;
+    }
+}
 void Player_Apply_Movement(packet_clientInput_t *input){
 
-
+    uint8_t isMovingLeft = (input->axis_X < 0);
+    uint8_t isMovingRight = (input->axis_X > 0);
 
     uint8_t currentCollisionInfo = playerArr[input->playerId].collisionSide;
     playerArr[input->playerId].collisionSide = 0;
@@ -208,19 +233,19 @@ void Player_Apply_Movement(packet_clientInput_t *input){
 
     //Vertical Movement
     
-    uint8_t wallSlidingCond = (INPUT_LEFT | INPUT_RIGHT) && (currentCollisionInfo & COLLIDE_LEFT) | (currentCollisionInfo & COLLIDE_RIGHT );
+    uint8_t wallSlidingCond = (isMovingLeft | isMovingRight) && (currentCollisionInfo & COLLIDE_LEFT) | (currentCollisionInfo & COLLIDE_RIGHT );
 
 
 
     //Wall-Jump Override Logic:
-    if(INPUT_LEFT && currentCollisionInfo & COLLIDE_LEFT && INPUT_JUMP){
+    if(isMovingLeft && currentCollisionInfo & COLLIDE_LEFT && NET_INPUT_PRESSED(input->buttons, NET_BTN_JUMP)){
         playerArr[input->playerId].velocity_x = 0;
         playerArr[input->playerId].velocity_y = 0;
         playerArr[input->playerId].force_x = 50;
         playerArr[input->playerId].force_y = -40;
         maxSpeedX = PLAYER_MAX_SPEED_WALLJUMP;
     }
-    else if(INPUT_RIGHT && currentCollisionInfo & COLLIDE_RIGHT && INPUT_JUMP){
+    else if(isMovingRight && currentCollisionInfo & COLLIDE_RIGHT && NET_INPUT_PRESSED(input->buttons, NET_BTN_JUMP)){
         playerArr[input->playerId].velocity_x = 0;
         playerArr[input->playerId].velocity_y = 0;
         playerArr[input->playerId].force_x = -50;
@@ -228,16 +253,16 @@ void Player_Apply_Movement(packet_clientInput_t *input){
         maxSpeedX = PLAYER_MAX_SPEED_WALLJUMP;
     }else{
 
-        if(input->buttons & (1<<0) && (currentCollisionInfo & COLLIDE_BOTTOM) && startJump == 0) {
+        if(NET_INPUT_PRESSED(input->buttons, NET_BTN_JUMP) && (currentCollisionInfo & COLLIDE_BOTTOM) && playerDataArr[input->playerId].startJump == 0) {
             playerArr[input->playerId].force_y = -30;
-            startJump = 1;
+            playerDataArr[input->playerId].startJump = 1;
         }
-        else if(startJump == 1 && jumpTIme < 6 && input->buttons & (1<<0)){
+        else if(playerDataArr[input->playerId].startJump == 1 && playerDataArr[input->playerId].jumpTime < 6 && NET_INPUT_PRESSED(input->buttons, NET_BTN_JUMP)){
             playerArr[input->playerId].force_y = -4;
-            jumpTIme += 1;
+            playerDataArr[input->playerId].jumpTime += 1;
         } else{
-            startJump = 0;
-            jumpTIme = 0;
+            playerDataArr[input->playerId].startJump = 0;
+            playerDataArr[input->playerId].jumpTime = 0;
             if(wallSlidingCond && playerArr[input->playerId].velocity_y > 0){
                 playerArr[input->playerId].force_y = -3;
             }
@@ -300,14 +325,18 @@ void RenderOtherPlayer()
     uint16_t *palette = (other->id == 0) ? palette_player1 : palette_player2;
 
     const uint8_t *playerSprite;
-    if (other->collisionSide & (COLLIDE_LEFT | COLLIDE_RIGHT))
+    if(((other->velocity_x<0 )| (other->velocity_x>0)) && ((player_Current->collisionSide & (COLLIDE_LEFT|COLLIDE_RIGHT))) ){
         playerSprite = tile_player_wall;
-    else if (other->velocity_y < 0)
+    }
+    else if(other->velocity_y < 0){
         playerSprite = tile_player_rise;
-    else if (other->velocity_y > 0)
+    }
+    else if(other->velocity_y > 0){
         playerSprite = tile_player_fall;
-    else
+    } 
+    else{
         playerSprite = tile_player;
+    }
 
     bool flip = (other->state & FACE_LEFT);
 

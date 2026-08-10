@@ -16,3 +16,4 @@ void init_nvs();
 
 void init_host();
 void init_client();
+void Network_Apply_Movement();
