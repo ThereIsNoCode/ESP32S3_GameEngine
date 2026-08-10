@@ -83,12 +83,45 @@ typedef struct input_packet_t {
 #define NETWORK_UDP_PORT 3333
 
 
+static int32_t lerp_fp(int32_t a, int32_t b, int32_t t){   // t in 0..FP_ONE
+    return a + (int32_t)(((int64_t)(b - a) * t) >> FP_SHIFT);
+}
+
+
+
+packet_serverSnapshot_t prevSnap, currSnap;   // two most recent
+int32_t    interpAlpha;          // 0..FP_ONE progress prev -> curr
+int        framesPerSnap = 2;    // render_rate / snapshot_rate, tune to yours
+#define FP_ONE 1 << FP_SHIFT
+// void Player_InterpolateRemoteNet(void){
+//     interpAlpha += FP_ONE / framesPerSnap;
+//     if (interpAlpha > FP_ONE) interpAlpha = FP_ONE;   // hold at curr, never guess past it
+
+//     for(int i = 0; i < 2; i++){
+//         // if(i == localId) continue;                    // local player is predicted, skip
+//         playerArr[i].position_x = lerp_fp(prevSnap.players[i].position_x,
+//                                           currSnap.players[i].position_x, 50);
+//         playerArr[i].position_y = lerp_fp(prevSnap.players[i].position_y,
+//                                           currSnap.players[i].position_y, 50);
+//     }
+// }
+
 packet_clientInput_t localInputPacket;
 //you can make this into an array of # of players, where index = player ID and value is packet for input
 packet_clientInput_t cachedInputPacket;
 packet_clientPosition_t cachedPositionPacket;
+
+packet_serverSnapshot_t recentSnapshot;
+
+
+
 //Once we want more players, loop through all cached packets and compute them
 void Network_Apply_Movement(){
+
+
+    if(player_Current->id == 1){
+        Player_InterpolateRemote(currSnap);
+    }
 
     localInputPacket.playerId = player_Current->id;
     localInputPacket.axis_X = joystick_X;
@@ -98,26 +131,31 @@ void Network_Apply_Movement(){
         ((INPUT_INTERACT ? 1 : 0) << 1);   // add more bits as needed
     localInputPacket.buttons = buttons;
 
-
+    //Player_InterpolateRemote(&recentSnapshot);
     Player_Apply_Movement(&localInputPacket);
 
     Player_Apply_Movement(&cachedInputPacket);
-    //Player_InterpolateRemote(&cachedPositionPacket);
+
+    
 }
 
+
 //Occurs only in client
-void apply_snapshot(packet_serverSnapshot_t *snap){
-    
-    for(int i = 0; i < 2; i++){
-        playerArr[i].position_x = snap->players[i].position_x;
-        playerArr[i].position_y = snap->players[i].position_y;
-    }
+void apply_snapshot(packet_serverSnapshot_t snap){
+    prevSnap    = currSnap;      // slide window: old current becomes previous
+    currSnap    = snap;
+    interpAlpha = 0;             // restart the prev->curr sweep
+    // for(int i = 0; i < 2; i++){
+    //     playerArr[i].position_x = snap.players[i].position_x;
+    //     playerArr[i].position_y = snap.players[i].position_y;
+    // }
+    // bombs can snap or interpolate the same way; direct-set shown for brevity
     for(int i = 0; i < 5; i++){
-        bombArr[i].position_x = snap->bombs[i].position_x;
-        bombArr[i].position_y = snap->bombs[i].position_y;
+        bombArr[i].position_x = snap.bombs[i].position_x;
+        bombArr[i].position_y = snap.bombs[i].position_y;
     }
 }
-#define tick_speed 33 //originally 33
+#define tick_speed 33  //originally 33
 // ---------------------------------------------------------------------------
 // SERVER
 // ---------------------------------------------------------------------------
@@ -354,7 +392,7 @@ static void udp_client_task(void *pvParameters)
                            
                             packet_serverSnapshot_t snap;
                             memcpy(&snap, rx_buffer, sizeof(snap));
-                            apply_snapshot(&snap);
+                            apply_snapshot(snap);
                         }
                         break;
                     }

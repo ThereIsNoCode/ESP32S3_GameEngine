@@ -188,14 +188,15 @@ void Player_DirectSetPosition(packet_clientPosition_t *input){
     playerArr[input->playerId].position_x = input->position_X;
     playerArr[input->playerId].position_y = input->position_Y;
 }
-void Player_InterpolateRemote(packet_clientPosition_t *input){
+void Player_InterpolateRemote(packet_serverSnapshot_t input){
     for (int i = 0; i < 2; i++) {
-        if (i == player_Current->id) continue;   // don't interpolate my own player, I control it directly
+        //if (i == player_Current->id) continue;   // don't interpolate my own player, I control it directly
 
         Entity *e = &playerArr[i];
         // Move 1/4 of the remaining distance each frame
-        e->position_x += (input->position_X - e->position_x) / 2;
-        e->position_y += (input->position_Y - e->position_y) / 2;
+        //One thing to consider: Store Network Pos, and Render Pos: where render pos is the interpolated data and network Pos ensures collisions don't occur weirdly 
+        e->position_x += (input.players[i].position_x - e->position_x) / 2;
+        e->position_y += (input.players[i].position_y - e->position_y) / 2;
     }
 }
 void Player_Apply_Movement(packet_clientInput_t *input){
@@ -243,6 +244,7 @@ void Player_Apply_Movement(packet_clientInput_t *input){
         playerArr[input->playerId].velocity_y = 0;
         playerArr[input->playerId].force_x = 50;
         playerArr[input->playerId].force_y = -40;
+        ESP_LOGI(DISPLAY_TAG, "WALL JUMPP");
         maxSpeedX = PLAYER_MAX_SPEED_WALLJUMP;
     }
     else if(isMovingRight && currentCollisionInfo & COLLIDE_RIGHT && NET_INPUT_PRESSED(input->buttons, NET_BTN_JUMP)){
@@ -250,6 +252,7 @@ void Player_Apply_Movement(packet_clientInput_t *input){
         playerArr[input->playerId].velocity_y = 0;
         playerArr[input->playerId].force_x = -50;
         playerArr[input->playerId].force_y = -40;
+        ESP_LOGI(DISPLAY_TAG, "WALL JUMPP");
         maxSpeedX = PLAYER_MAX_SPEED_WALLJUMP;
     }else{
 

@@ -32,7 +32,7 @@ void Player_Move();
 
 void Player_Apply_Movement(packet_clientInput_t *input);
 void Player_DirectSetPosition(packet_clientPosition_t *input);
-void Player_InterpolateRemote(packet_clientPosition_t *input);
+void Player_InterpolateRemote(packet_serverSnapshot_t input);
 // void Player_CollideX();
 // void Player_CollideY();
 void RenderPlayer();

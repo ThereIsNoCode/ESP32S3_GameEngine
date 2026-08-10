@@ -163,46 +163,48 @@ void DMA_DrawMap(){
         }
     }
 }
+#include "soc/rtc.h"
 
+const uint8_t isHost = 0;
 
+#define FRAME_TIME_US 41666
 
-const uint8_t isHost = 1;
-
-static void gameLoop_task(void *pvParameters){
+static void gameLoop_task(void *pvParameters)
+{
     while (1)
     {
-        int64_t t0 = esp_timer_get_time();
+        int64_t frame_start = esp_timer_get_time();
+
         Sample_Joystick();
-
-        //ESP_LOGI(DISPLAY_TAG, "X (GPIO6) = %4d   Y (GPIO7) = %4d", x, y);
-        
-        //Player_Apply_Movement(&inputPacketLocal);
         Network_Apply_Movement();
-        //Player_Move();
 
-    
-        
         Bomb_Move();
-        
-        DMA_DrawMap();
 
-        
+        DMA_DrawMap();
         Bomb_Render();
         RenderPlayer();
         RenderOtherPlayer();
-        
+
         DMA_BlastBuffer();
 
- 
-       
+        int64_t frame_end = esp_timer_get_time();
+        int64_t frame_time = frame_end - frame_start;
 
-        int64_t t1 = esp_timer_get_time();
+        if (frame_time < FRAME_TIME_US)
+        {
+            int64_t sleep_us = FRAME_TIME_US - frame_time;
+            esp_rom_delay_us((uint32_t)sleep_us);
+        }
 
-        int64_t diff_us = t1 - t0;
-        float fps = 1000000.0f / diff_us;
-        vTaskDelay(pdMS_TO_TICKS(1));
-        ESP_LOGI(DISPLAY_TAG, "Total FrameTime blast: %lld us | FPS: %.1f", diff_us, fps);
-        
+        int64_t total_frame_time =
+            esp_timer_get_time() - frame_start;
+
+        float fps = 1000000.0f / total_frame_time;
+
+        ESP_LOGI(DISPLAY_TAG,
+                 "Frame: %lld us | FPS: %.2f",
+                 total_frame_time,
+                 fps);
     }
 }
 
