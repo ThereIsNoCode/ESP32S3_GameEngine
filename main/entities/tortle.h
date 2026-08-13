@@ -10,7 +10,8 @@
 
 typedef struct Tortle{
     uint8_t status; //One bit for shell mode
-
+    uint8_t isGrabbed;
+    int8_t ignoreEntityId; //using int8_t since playerId = 0 is host, playerId = 1 is client. -1 can represent no one
 } Tortle;
 
 //extern Entity bombArr[BOMB_POOL_SIZE];
