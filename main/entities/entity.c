@@ -177,51 +177,60 @@ void Entity_CollideY_Tile(Entity *entity)
         }
     }
 }
-uint8_t Entity_Collide_Entity(Entity *entityMain, Entity *entitySecondary){
-    int playerPosX = entityMain->position_x >> FP_SHIFT;
-    int playerPosY = entityMain->position_y >> FP_SHIFT;
-    int entitySecondaryPosX = entitySecondary->position_x >> FP_SHIFT;
-    int entitySecondaryPosY = entitySecondary->position_y >> FP_SHIFT;
-    int aLeft   = playerPosX;
-    int aRight  = aLeft + entityMain->size;
-    int aTop    = playerPosY;
-    int aBottom = aTop + entityMain->size;
+uint8_t Entity_Collide_Entity(Entity *entityMain, Entity *entitySecondary)
+{
+    int32_t ax = entityMain->position_x, ay = entityMain->position_y;
+    int32_t aw = entityMain->size << FP_SHIFT, ah = entityMain->size << FP_SHIFT;
+    int32_t bx = entitySecondary->position_x, by = entitySecondary->position_y;
+    int32_t bw = entitySecondary->size << FP_SHIFT, bh = entitySecondary->size << FP_SHIFT;
 
-    int bLeft   = entitySecondaryPosX;
-    int bRight  = bLeft + entitySecondary->size;
-    int bTop    = entitySecondaryPosY;
-    int bBottom = bTop + entitySecondary->size;
+    // penetration depth out each side at the current position (>0 on all four = overlapping)
+    int32_t pushR = (bx + bw) - ax;   // main hit on its LEFT   -> COLLIDE_LEFT
+    int32_t pushL = (ax + aw) - bx;   // main hit on its RIGHT  -> COLLIDE_RIGHT
+    int32_t pushD = (by + bh) - ay;   // main hit on its TOP    -> COLLIDE_TOP
+    int32_t pushU = (ay + ah) - by;   // main hit on its BOTTOM -> COLLIDE_BOTTOM
 
-    // AABB overlap test — bail early if they don't touch
-    if (!(aLeft < bRight && aRight > bLeft && aTop < bBottom && aBottom > bTop))
-        return 0;
-
-    // How far they overlap on each axis (always positive when overlapping)
-    int overlapLeft   = aRight - bLeft;   // push main LEFT  by this much
-    int overlapRight  = bRight - aLeft;   // push main RIGHT by this much
-    int overlapTop    = aBottom - bTop;   // push main UP    by this much
-    int overlapBottom = bBottom - aTop;   // push main DOWN  by this much
-
-    // Smallest overlap on each axis = the direction the collision came from
-    int overlapX = (overlapLeft < overlapRight) ? overlapLeft : overlapRight;
-    int overlapY = (overlapTop  < overlapBottom) ? overlapTop  : overlapBottom;
-
-    if (overlapX < overlapY){
-        // Horizontal collision
-        if (overlapLeft < overlapRight){
-            // secondary is to the RIGHT of main → main was hit on its right side
-            return COLLIDE_RIGHT;
-        } else {
-            return COLLIDE_LEFT;
-        }
-    } else {
-        // Vertical collision
-        if (overlapTop < overlapBottom){
-            // secondary is BELOW main → main was hit on its bottom side
-            return COLLIDE_BOTTOM;
-        } else {
-            return COLLIDE_TOP;
-        }
+    if (pushL > 0 && pushR > 0 && pushU > 0 && pushD > 0) {
+        // Already overlapping -> resolve out the CLOSEST side.
+        int32_t ox = (pushL < pushR) ? pushL : pushR;
+        int32_t oy = (pushU < pushD) ? pushU : pushD;
+        if (ox < oy) return (pushL < pushR) ? COLLIDE_RIGHT  : COLLIDE_LEFT;
+        else         return (pushU < pushD) ? COLLIDE_BOTTOM : COLLIDE_TOP;
     }
-    return 0;
+
+    // Not overlapping yet -> swept, so a fast mover can't skip clean through.
+    const int64_t ONE = (int64_t)1 << FP_SHIFT;
+    const int64_t NEG_INF = INT64_MIN / 2, POS_INF = INT64_MAX / 2;
+
+    int32_t vx = entityMain->velocity_x - entitySecondary->velocity_x;
+    int32_t vy = entityMain->velocity_y - entitySecondary->velocity_y;
+
+    int32_t xIn, xOut, yIn, yOut;
+    if (vx > 0) { xIn = bx - (ax + aw); xOut = (bx + bw) - ax; }
+    else        { xIn = (bx + bw) - ax; xOut = bx - (ax + aw); }
+    if (vy > 0) { yIn = by - (ay + ah); yOut = (by + bh) - ay; }
+    else        { yIn = (by + bh) - ay; yOut = by - (ay + ah); }
+
+    int64_t xEntry, xExit, yEntry, yExit;
+    if (vx == 0) {
+        if (ax + aw <= bx || ax >= bx + bw) return 0;
+        xEntry = NEG_INF; xExit = POS_INF;
+    } else {
+        xEntry = ((int64_t)xIn  << FP_SHIFT) / vx;
+        xExit  = ((int64_t)xOut << FP_SHIFT) / vx;
+    }
+    if (vy == 0) {
+        if (ay + ah <= by || ay >= by + bh) return 0;
+        yEntry = NEG_INF; yExit = POS_INF;
+    } else {
+        yEntry = ((int64_t)yIn  << FP_SHIFT) / vy;
+        yExit  = ((int64_t)yOut << FP_SHIFT) / vy;
+    }
+
+    int64_t entry = (xEntry > yEntry) ? xEntry : yEntry;
+    int64_t exit  = (xExit  < yExit)  ? xExit  : yExit;
+    if (entry > exit || entry < 0 || entry > ONE) return 0;
+
+    if (xEntry > yEntry) return (vx > 0) ? COLLIDE_RIGHT  : COLLIDE_LEFT;
+    else                 return (vy > 0) ? COLLIDE_BOTTOM : COLLIDE_TOP;
 }

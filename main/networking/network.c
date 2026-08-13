@@ -145,10 +145,12 @@ void apply_snapshot(packet_serverSnapshot_t snap){
     prevSnap    = currSnap;      // slide window: old current becomes previous
     currSnap    = snap;
     interpAlpha = 0;             // restart the prev->curr sweep
-    // for(int i = 0; i < 2; i++){
-    //     playerArr[i].position_x = snap.players[i].position_x;
-    //     playerArr[i].position_y = snap.players[i].position_y;
-    // }
+    for(int i = 0; i < 2; i++){
+        playerArr[i].position_x = snap.players[i].position_x;
+        playerArr[i].position_y = snap.players[i].position_y;
+        playerArr[i].renderPos_x = snap.players[i].position_x;
+        playerArr[i].renderPos_y = snap.players[i].position_y;
+    }
     // bombs can snap or interpolate the same way; direct-set shown for brevity
     for(int i = 0; i < 5; i++){
         bombArr[i].position_x = snap.bombs[i].position_x;

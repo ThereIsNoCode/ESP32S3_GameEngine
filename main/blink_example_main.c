@@ -6,6 +6,7 @@
 #include "../tiles/tileset.h"
 #include "../drivers/ILI9341.h"
 #include "entities/player.h"
+#include "entities/gumby.h"
 #include "esp_timer.h"
 #include "../maps/level_manager.h"
 #include "entities/bomb.h"
@@ -165,7 +166,7 @@ void DMA_DrawMap(){
 }
 #include "soc/rtc.h"
 
-const uint8_t isHost = 0;
+const uint8_t isHost = 1;
 
 #define FRAME_TIME_US 41666
 
@@ -179,9 +180,11 @@ static void gameLoop_task(void *pvParameters)
         Network_Apply_Movement();
 
         Bomb_Move();
+        Gumby_Move();
 
         DMA_DrawMap();
         Bomb_Render();
+        Gumby_Render();
         RenderPlayer();
         RenderOtherPlayer();
 
@@ -201,10 +204,10 @@ static void gameLoop_task(void *pvParameters)
 
         float fps = 1000000.0f / total_frame_time;
 
-        ESP_LOGI(DISPLAY_TAG,
-                 "Frame: %lld us | FPS: %.2f",
-                 total_frame_time,
-                 fps);
+        // ESP_LOGI(DISPLAY_TAG,
+        //          "Frame: %lld us | FPS: %.2f",
+        //          total_frame_time,
+        //          fps);
     }
 }
 
@@ -216,7 +219,7 @@ void app_main(void)
 
     LoadLevel(LVL_ID_TESTLEVEL);
     Bomb_Initialize();
-    
+    Gumby_Initialize();
     SPI_Init();
     ili9341_init();
     ili9341_fill_screen(0xF000);

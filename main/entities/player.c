@@ -14,7 +14,7 @@ Entity playerArr[] = {
         0, //COllision Side
         16, //size
         0,
-        0   //ID
+        0,0,0   //ID
     },
     {
         128,  //PosX
@@ -29,7 +29,8 @@ Entity playerArr[] = {
         0, //COllision Side
         16, //size
         0,
-        0   //ID
+        0,   //ID
+        0,0
     }
 
 }; 

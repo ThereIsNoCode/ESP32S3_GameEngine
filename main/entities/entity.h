@@ -18,6 +18,8 @@ typedef struct Entity{
     uint8_t size;
     uint8_t state;
     uint8_t id;
+    int32_t renderPos_x;
+    int32_t renderPos_y;
 } Entity;
 
 typedef struct EntityPacket{
