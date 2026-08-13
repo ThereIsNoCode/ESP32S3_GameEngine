@@ -47,6 +47,9 @@ void Gumby_Move(){
     int32_t player_position_x = player_Current->position_x;
     int32_t player_position_y = player_Current->position_y;
     for(int i = 0; i < GUMBY_POOL_SIZE; i++){
+       
+        if(gumbyArr[i].state & IS_INACTIVE) { continue; }
+       
         uint8_t currentCollisionInfo = gumbyArr[i].collisionSide;
         gumbyArr[i].collisionSide = 0;
 
@@ -63,11 +66,11 @@ void Gumby_Move(){
                 playerDataArr[j].startJump = 0;
                 playerDataArr[j].jumpTime = 0;
                 playerArr[j].collisionSide |= COLLIDE_BOTTOM;
+                gumbyArr[i].state |= IS_INACTIVE;
             }
             else if((collisionPlayerInfo & COLLIDE_RIGHT) | (collisionPlayerInfo & COLLIDE_LEFT)){
                 playerArr[j].position_x = 32;
                 playerArr[j].position_y = 92;
-                ESP_LOGI(DISPLAY_TAG, "GUMBY LEFTRIGHT HIT");
             }
         }
 
@@ -109,10 +112,12 @@ void Gumby_Move(){
 
 void Gumby_Render()
 {
+
     int MAP_PIXEL_WIDTH = lvl_width * TILE_SIZE;   // full map width in RENDER-space pixels
     int MAP_PIXEL_WIDTH_HALF = MAP_PIXEL_WIDTH/2;   // full map width in RENDER-space pixels
     int32_t playerX = player_Current->position_x >> 2;
     for(int i = 0; i < GUMBY_POOL_SIZE; i++){
+        if(gumbyArr[i].state & IS_INACTIVE) { continue; }
         // Same camera calculation as DMA_DrawMap, so bomb draws in the correct
         // screen position relative to the scrolling world (not just a fixed X)
         int cameraX = (playerX) - (SCREEN_WIDTH_HALF);

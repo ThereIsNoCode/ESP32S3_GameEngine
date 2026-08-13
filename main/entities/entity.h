@@ -9,14 +9,14 @@ typedef struct Entity{
     int32_t position_y;
     int32_t velocity_x;
     int32_t velocity_y;
-    int32_t accel_x;
-    int32_t accel_y;
-    int32_t force_x;
-    int32_t force_y;
+    int16_t accel_x;
+    int16_t accel_y;
+    int16_t force_x;
+    int16_t force_y;
     uint16_t tint_color; // 0xFFFF //Each nibble represents I,R,G,B (Gamma, red, green, blue), 16 shades each
     uint8_t collisionSide;
     uint8_t size;
-    uint8_t state;
+    uint8_t state; //Holds direction entity is facing, isActive, etc. 
     uint8_t id;
     int32_t renderPos_x;
     int32_t renderPos_y;
@@ -34,6 +34,7 @@ typedef struct EntityPacket{
 #define FACE_LEFT   (1u << 1)
 #define IS_MOVING   (1u << 2)
 #define IS_HOLDING  (1u << 3)
+#define IS_INACTIVE  (1u << 4)
 
 void Entity_CollideY_Tile(Entity *entity);
 void Entity_CollideX_Tile(Entity *entity);

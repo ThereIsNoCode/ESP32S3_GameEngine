@@ -7,6 +7,7 @@
 #include "../drivers/ILI9341.h"
 #include "entities/player.h"
 #include "entities/gumby.h"
+#include "entities/tortle.h"
 #include "esp_timer.h"
 #include "../maps/level_manager.h"
 #include "entities/bomb.h"
@@ -181,10 +182,11 @@ static void gameLoop_task(void *pvParameters)
 
         Bomb_Move();
         Gumby_Move();
-
+        Tortle_Move();
         DMA_DrawMap();
         Bomb_Render();
         Gumby_Render();
+        Tortle_Render();
         RenderPlayer();
         RenderOtherPlayer();
 
@@ -220,6 +222,7 @@ void app_main(void)
     LoadLevel(LVL_ID_TESTLEVEL);
     Bomb_Initialize();
     Gumby_Initialize();
+    Tortle_Initialize();
     SPI_Init();
     ili9341_init();
     ili9341_fill_screen(0xF000);

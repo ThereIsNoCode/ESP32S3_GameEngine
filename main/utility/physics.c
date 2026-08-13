@@ -11,21 +11,21 @@
 //Input: force magnitude for whichever axis
 //Output: acceleration for whichever axis
 void Physics_getAcceleration(
-    int32_t forceMagnitude, 
-    int32_t *accel){
+    int16_t forceMagnitude, 
+    int16_t *accel){
 
     //F = ma => a = F/m, but no mass at the moment so mass will be treated as one
 
     (*accel) = forceMagnitude; 
 }
 
-void Physics_AddFriction(uint8_t frictionCoeff, int32_t *velocity, int32_t *force){
+void Physics_AddFriction(uint8_t frictionCoeff, int32_t *velocity, int16_t *force){
     //(*force) -= velocity*0.05; //Temperary Until I can find More efficient solution
     *velocity = (*velocity*frictionCoeff)/100; // 243/256 ≈ 0.949   
 
 }
 
-void Physics_AddGravity(uint8_t frictionCoeff, int32_t *velocity, int32_t *force){
+void Physics_AddGravity(uint8_t frictionCoeff, int32_t *velocity, int16_t *force){
     //(*force) -= velocity*0.05; //Temperary Until I can find More efficient solution
     *force += 4; // 243/256 ≈ 0.949
     //ESP_LOGI(DISPLAY_TAG, "VELOCITY: %i", *velocity);
@@ -54,7 +54,7 @@ void Physics_ClampVelocity(int32_t *velocity, int32_t maxSpeed){
 
 }
 
-void Physics_ApplyForceWithCap(int32_t *velocity, int32_t *force, int32_t maxSpeed){
+void Physics_ApplyForceWithCap(int32_t *velocity, int16_t *force, int32_t maxSpeed){
     // If we're already at/past the cap and force is pushing further past it, zero the force out.
     if ((*velocity) >= maxSpeed && (*force) > 0) *force = 0;
     if ((*velocity) <= -maxSpeed && (*force) < 0) *force = 0;
