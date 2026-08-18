@@ -8,6 +8,7 @@
 #include "../maps/level_manager.h"
 
 typedef struct Player{
+    uint8_t ability; 
     uint8_t startJump;
     uint8_t jumpTime;
 } Player;

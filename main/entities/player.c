@@ -39,8 +39,10 @@ Player playerDataArr[] = {
     {
         0,
         0,
+        0,
     },
     {
+        0,
         0,
         0,
     }
@@ -48,8 +50,7 @@ Player playerDataArr[] = {
 }; 
 
 Entity *player_Current; 
-int joyStick_X;
-int joyStick_Y;
+
 
 #define PLAYER_MAX_SPEED (4 << 2)
 
@@ -59,6 +60,7 @@ int joyStick_Y;
 //They can have their own seperate tint
 uint16_t palette_player1[16];
 uint16_t palette_player2[16];
+uint16_t palette_flower_robe[16];
 
 void assign_player(uint8_t id){
      ESP_LOGI(DISPLAY_TAG, "SETTING PLAYER TO CORRECT ID: %u" , id);
@@ -72,6 +74,8 @@ void  Player_SetPalette(uint16_t player1_tint, uint16_t player2_tint){
     for(int i = 0; i < 16; i += 1){
         palette_player1[i] = tint_gray(i, player1_tint);
         palette_player2[i] = tint_gray(i, player2_tint);
+        //palette_flower_robe[i] = tint_gray(i, 0x5F0F); //Purple
+        palette_flower_robe[i] = tint_gray(i, 0x5F50); //Orange
     }
 }
 
@@ -403,22 +407,36 @@ void RenderPlayer(){
     bool flip = (player_Current->state & FACE_LEFT);     // constant for the whole sprite
     
     const uint8_t* playerSprite;
+    const uint8_t* overlaySprite = 0;
     //ESP_LOGI(DISPLAY_TAG, "COLLIDE_RIGHT: %u", player_Current->collisionSide & COLLIDE_RIGHT);
     //ESP_LOGI(DISPLAY_TAG, "COLLIDE_RIGHT: %u", player_Current->collisionSide & COLLIDE_LEFT);
-    if((INPUT_LEFT | INPUT_RIGHT) && ((player_Current->collisionSide & (COLLIDE_LEFT|COLLIDE_RIGHT))) ){
+    if(((joystick_X > 0) | (joystick_X < 0)) && ((player_Current->collisionSide & (COLLIDE_LEFT|COLLIDE_RIGHT))) ){
         playerSprite = tile_player_wall;
+        overlaySprite = tile_flower_robe_wall;
     }
     else if(player_Current->velocity_y < 0){
         playerSprite = tile_player_rise;
+        overlaySprite = tile_flower_robe_rise;
     }
     else if(player_Current->velocity_y > 0){
         playerSprite = tile_player_fall;
+        overlaySprite = tile_flower_robe_fall;
     } 
     else{
         playerSprite = tile_player;
+        overlaySprite = tile_flower_robe;
+    }
+
+    if(playerDataArr[player_Current->id].ability == 0){
+        overlaySprite = 0;
     }
 
     for(int y = 0; y < 8; y++){
+
+
+        
+
+        
         int lineTop    = convertedScreenPosY + (y * 2);
         int lineBottom = lineTop + 1;
 
@@ -433,23 +451,33 @@ void RenderPlayer(){
         uint32_t row1 = row0 + SCREEN_WIDTH;
 
         for(int x = 0; x < 4; x++){
-            uint8_t pixelByte = playerSprite[(y << 2) + x];
-            uint8_t shade1 = pixelByte >> 4;
-            uint8_t shade2 = pixelByte & 0x0F;
+            uint8_t playerPixelByte = playerSprite[(y << 2) + x];
+            uint8_t playerShade1 = playerPixelByte >> 4;
+            uint8_t playerShade2 = playerPixelByte & 0x0F;
 
-            uint16_t pixel1;
-            uint16_t pixel2;
+
+
+            uint16_t pixel1 = palette[playerShade1];
+            uint16_t pixel2 = palette[playerShade2];
             
-            uint32_t dstX = 160 + (x << 2);
+            uint32_t dstX;
             
+            if(overlaySprite != 0){
+                uint8_t overlayPixelByte = overlaySprite[(y << 2) + x];
+                uint8_t overlayShade1 = overlayPixelByte >> 4;
+                uint8_t overlayShade2 = overlayPixelByte & 0x0F;
+
+                if(overlayShade1 != 0) { pixel1 = palette_flower_robe[overlayShade1]; }
+                if(overlayShade2 != 0) { pixel2 = palette_flower_robe[overlayShade2]; }
+            }
+
             if(player_Current->state&FACE_LEFT){
                 dstX = 160 + (16 - 4) - (x << 2);    // groups reverse
-                pixel1 = palette[shade2];
-                pixel2 = palette[shade1];
+                uint16_t temp = pixel1;
+                pixel1 = pixel2;
+                pixel2 = temp;
             } else {
                 dstX = 160 + (x << 2);
-                pixel1 = palette[shade1];
-                pixel2 = palette[shade2];
             }
 
 

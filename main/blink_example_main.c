@@ -12,7 +12,8 @@
 #include "../maps/level_manager.h"
 #include "entities/bomb.h"
 #include "networking/network.h"
-
+#include "entities/flower.h"
+#include "entities/fireball.h"
 // ----------------------------------------------------------------
 // Entry point
 // ----------------------------------------------------------------
@@ -183,10 +184,14 @@ static void gameLoop_task(void *pvParameters)
         Bomb_Move();
         Gumby_Move();
         Tortle_Move();
+        Flower_Move();
+        Fireball_Move();
         DMA_DrawMap();
         Bomb_Render();
         Gumby_Render();
         Tortle_Render();
+        Flower_Render();
+        Fireball_Render();
         RenderPlayer();
         RenderOtherPlayer();
 
@@ -223,6 +228,8 @@ void app_main(void)
     Bomb_Initialize();
     Gumby_Initialize();
     Tortle_Initialize();
+    Flower_Initialize();
+    Fireball_Initialize();
     SPI_Init();
     ili9341_init();
     ili9341_fill_screen(0xF000);

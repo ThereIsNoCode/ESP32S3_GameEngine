@@ -151,7 +151,7 @@ void Tortle_Move(){
             
             } else if(currentCollisionInfo & COLLIDE_RIGHT){
                 //ESP_LOGI(DISPLAY_TAG, "BOUNCE To LEFT");
-                tortleArr[i].velocity_x = -TORTLE_MAX_SPEED;
+                tortleArr[i].velocity_x = -TORTLE_SPEED;
 
             }
         } else if ((tortleDataArr[i].status & TORTLE_STATUS_SLIDING) == 0){
